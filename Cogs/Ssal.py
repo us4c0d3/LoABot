@@ -5,6 +5,10 @@ import tokens
 import discord
 from discord.ext import commands
 from discord import app_commands
+from discord.ui import Button, View
+from discord import ButtonStyle
+import datetime
+import pytz
 import requests
 import json
 import asyncio
@@ -23,9 +27,26 @@ class Ssal(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="전설지도", description="전설지도 입찰 적정가 계산기")
-    async def wleh(self, interaction: discord.Interaction) -> None:
-        embed = self.legendaryMap()
-        await interaction.response.send_message(embed=embed)
+    async def legendaryMap(self, interaction: discord.Interaction) -> None:
+        voldaik = Button(label='볼다이크', style=ButtonStyle.primary)
+        bern = Button(label='베른 남부', style=ButtonStyle.primary)
+
+        async def voldaik_callback(interaction: discord.Interaction):
+            embed = self.legendaryMap_Voldaik()
+            await interaction.response.send_message(embed=embed)
+
+        async def bern_callback(interaction: discord.Interaction):
+            embed = self.legendaryMap_Bern()
+            await interaction.response.send_message(embed=embed)
+
+        voldaik.callback = voldaik_callback
+        bern.callback = bern_callback
+
+        view = View()
+        view.add_item(voldaik)
+        view.add_item(bern)
+        await interaction.response.send_message("지역을 선택해주세요. 이 메시지는 5초 후 삭제됩니다.", view=view, delete_after=5)
+
 
     '''
     16인 레이드 추가될 시 주석 해제
@@ -48,7 +69,7 @@ class Ssal(commands.Cog):
             fair.append(math.floor(price[i]/1.1))
 
         
-        embed = discord.Embed(title=":scales: 경매 입찰 적정가 계산기", description=f"[:coin:`{common_price}`]")
+        embed = discord.Embed(title=":scales: 경매 입찰 적정가 계산기", description=f"[:coin:`{common_price}`]", timestamp=datetime.datetime.now(pytz.timezone('UTC')))
         embed.add_field(name="손익분기점", value=f"4인: [:coin:`{price[0]}`]\n8인: [:coin:`{price[1]}`]", inline=False)
         embed.add_field(name="적정입찰가", value=f"4인: [:coin:`{fair[0]}`]\n8인: [:coin:`{fair[1]}`]", inline=False)
         embed.add_field(name="분배금", value=f"4인: [:coin:`{math.floor(fair[0] * 1/3)}`]\n8인: [:coin:`{math.floor(fair[1] * 1/7)}`]", inline=False)
@@ -57,47 +78,83 @@ class Ssal(commands.Cog):
         return embed
 
 
-    def legendaryMap(self):
+    # 볼다이크
+    def legendaryMap_Voldaik(self):
+        '''
+        은축가 각각 16, 8, 4개 solar grace, blessing, protection (최소 개수 기준, 축복 최대 12개)
+        명파주머니(대) 8개 honor shard pouch(최소 개수 기준, 최대 12개)
+        3티어 1레벨 보석 48개
+        '''
+        self.gem_price = self.get_gem_price()
+        self.overall_gem_price = self.gem_price * 48
+
+        self.solar_price = self.get_solar_price()
+        self.overall_solar_price = {}
+        j = 12
+        for i in self.solar_price:
+            self.overall_solar_price[i] = self.solar_price[i] * j
+            j -= 4
+        self.overall_solar_price['태양의 은총'] += self.solar_price['태양의 은총'] * 4
+
+        self.honor_price = self.get_honor_price()
+        self.overall_honor_price = self.honor_price * 8
+        
+        # print(self.overall_gem_price, self.overall_solar_price, self.overall_honor_price)
+
+        self.price = 0
+        for i in self.overall_solar_price:
+            self.price += self.overall_solar_price[i]
+        self.price += self.overall_gem_price
+        self.price += self.overall_honor_price
+
+        return self.makeEmbed('볼다이크')
+
+
+    # 베른 남부
+    def legendaryMap_Bern(self):
         '''
         은축가 각각 12, 8, 4개 solar grace, blessing, protection
         명파주머니(대) 8개 honor shard pouch
         3티어 1레벨 보석 40개
         '''
-        gem_price = self.get_gem_price()
-        overall_gem_price = gem_price * 40
+        self.gem_price = self.get_gem_price()
+        self.overall_gem_price = self.gem_price * 40
 
-        solar_price = self.get_solar_price()
-        overall_solar_price = {}
+        self.solar_price = self.get_solar_price()
+        self.overall_solar_price = {}
         j = 12
-        for i in solar_price:
-            overall_solar_price[i] = solar_price[i] * j
+        for i in self.solar_price:
+            self.overall_solar_price[i] = self.solar_price[i] * j
             j -= 4
 
-        honor_price = self.get_honor_price()
-        overall_honor_price = honor_price * 8
+        self.honor_price = self.get_honor_price()
+        self.overall_honor_price = self.honor_price * 8
         
-        # print(overall_gem_price, overall_solar_price, overall_honor_price)
+        # print(self.overall_gem_price, self.overall_solar_price, self.overall_honor_price)
 
-        price = 0
-        for i in overall_solar_price:
-            price += overall_solar_price[i]
-        price += overall_gem_price
-        price += overall_honor_price
+        self.price = 0
+        for i in self.overall_solar_price:
+            self.price += self.overall_solar_price[i]
+        self.price += self.overall_gem_price
+        self.price += self.overall_honor_price
 
         # print(price)
+        return self.makeEmbed('베른 남부')
 
-        price_message = self.price_format(price)
-        honor_message = self.message_format(honor_price, overall_honor_price)
-        gem_message = self.message_format(gem_price, overall_gem_price)
 
-        embed=discord.Embed(title=":moneybag: 전설지도 입찰 적정가 계산기", description=price_message)
-        embed.add_field(name="명예의 파편 주머니(대)", value=honor_message, inline=False)
-        embed.add_field(name="3티어 1레벨 보석", value=gem_message, inline=False)
+    def makeEmbed(self, name: str):
+        self.price_message = self.price_format()
+        self.honor_message = self.message_format(self.honor_price, self.overall_honor_price)
+        self.gem_message = self.message_format(self.gem_price, self.overall_gem_price)
+
+        embed=discord.Embed(title=f":moneybag: {name} 전설지도 입찰 적정가 계산기", description=self.price_message, timestamp=datetime.datetime.now(pytz.timezone('UTC')))
+        embed.add_field(name="명예의 파편 주머니(대)", value=self.honor_message, inline=False)
+        embed.add_field(name="3티어 1레벨 보석", value=self.gem_message, inline=False)
         # print(price_message)
         # print(honor_message)
         # print(gem_message)
-        for i in solar_price:
-            message = self.message_format(solar_price[i], overall_solar_price[i])
+        for i in self.solar_price:
+            message = self.message_format(self.solar_price[i], self.overall_solar_price[i])
             # print(message)
             embed.add_field(name=i, value=message, inline=True)
         embed.set_footer(text="Made by 우사니#3136")
@@ -105,11 +162,11 @@ class Ssal(commands.Cog):
         return embed
 
 
-    def price_format(self, price: int):
-        fairprice = math.floor(price * 0.95 * 29/30)
+    def price_format(self):
+        fairprice = math.floor(self.price * 0.95 * 29/30)
         distprice = math.floor(fairprice * 1/29)
         message = [
-            f"가격: :coin:`{price}`",
+            f"가격: :coin:`{self.price}`",
             f"손익분기점: :coin:`{fairprice}`",
             f"적정입찰가: :coin:`{math.floor(fairprice/1.1)}`",
             f"분배금: :coin:`{distprice}`"
@@ -218,4 +275,5 @@ class Ssal(commands.Cog):
             return -1
 
 async def setup(bot) -> None:
+    # await bot.add_cog(Ssal(bot), guilds=[discord.Object(id=tokens.guild_id)])
     await bot.add_cog(Ssal(bot))

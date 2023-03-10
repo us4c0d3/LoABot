@@ -27,6 +27,7 @@ class MyBot(commands.Bot):
         for ext in self.initial_extension:
             await self.load_extension(ext)
         
+        # await bot.tree.sync(guild=discord.Object(id=tokens.guild_id))
         await bot.tree.sync()
 
 
